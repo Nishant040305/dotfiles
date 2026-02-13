@@ -104,43 +104,48 @@ _proxy_system_set() {
             ;;
     esac
     
+    local proxy_url="http://edcguest:edcguest@${ip}:3128"
+
     echo -e "${_CLR_INFO}${_CLR_BOLD}⟳ Setting system proxy${_CLR_RESET} ${_CLR_DIM}to${_CLR_RESET} ${_CLR_ACCENT}$ip${_CLR_RESET}"
-    sudo -v
     
-    gsettings set org.gnome.system.proxy.http host "$ip"
-    gsettings set org.gnome.system.proxy.https host "$ip"
+    kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy "$proxy_url"
+    kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key httpsProxy "$proxy_url"
+    kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key ftpProxy "$proxy_url"
+    kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key NoProxyFor "localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
     echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ System proxy${_CLR_RESET} ${_CLR_DIM}configured${_CLR_RESET}"
 }
 
-# Set system proxy mode to manual
+# Set system proxy mode to manual (KDE ProxyType=1)
 _proxy_system_enable() {
     echo -e "${_CLR_INFO}${_CLR_BOLD}⟳ Enabling system proxy${_CLR_RESET}"
-    gsettings set org.gnome.system.proxy mode manual
+    kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key ProxyType 1
     echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ System proxy${_CLR_RESET} ${_CLR_DIM}enabled${_CLR_RESET}"
 }
 
-# Set system proxy mode to none
+# Set system proxy mode to none (KDE ProxyType=0)
 _proxy_system_disable() {
     echo -e "${_CLR_INFO}${_CLR_BOLD}⟳ Disabling system proxy${_CLR_RESET}"
-    gsettings set org.gnome.system.proxy mode none
+    kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key ProxyType 0
     echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ System proxy${_CLR_RESET} ${_CLR_DIM}disabled${_CLR_RESET}"
 }
 
-# Enable shell proxy using system settings
+# Enable shell proxy using KDE system settings
 _proxyon() {
-    local host=$(gsettings get org.gnome.system.proxy.http host | tr -d \')
-    local port=$(gsettings get org.gnome.system.proxy.http port)
-    local user="edcguest"
-    local pass="edcguest"
+    # Read proxy URL from KDE kioslaverc
+    local proxy_url=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy 2>/dev/null)
     
-    local proxy="http://$user:$pass@$host:$port"
-    export http_proxy=$proxy
-    export https_proxy=$proxy
-    export HTTP_PROXY=$proxy
-    export HTTPS_PROXY=$proxy
+    if [[ -z "$proxy_url" ]]; then
+        echo -e "${_CLR_ERROR}No system proxy configured. Use 'proxy system set <IP>' first.${_CLR_RESET}"
+        return 1
+    fi
 
-    echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ Environment${_CLR_RESET} ${_CLR_DIM}proxy set to${_CLR_RESET} ${_CLR_INFO}$proxy${_CLR_RESET}"
+    export http_proxy=$proxy_url
+    export https_proxy=$proxy_url
+    export HTTP_PROXY=$proxy_url
+    export HTTPS_PROXY=$proxy_url
+
+    echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ Environment${_CLR_RESET} ${_CLR_DIM}proxy set to${_CLR_RESET} ${_CLR_INFO}$proxy_url${_CLR_RESET}"
 
     if [[ "$1" == "--local" ]]; then
         return
@@ -157,7 +162,7 @@ _proxyon() {
 
     {
         echo "[main]"
-        echo "proxy=$proxy"
+        echo "proxy=$proxy_url"
     } | sudo tee "/etc/dnf/dnf.conf" > /dev/null
 
     echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ System proxy${_CLR_RESET} ${_CLR_DIM}configured${_CLR_RESET} ${_CLR_ACCENT}(NetworkManager, DNF)${_CLR_RESET}"
@@ -185,25 +190,46 @@ _proxyoff() {
     echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ System proxy${_CLR_RESET} ${_CLR_DIM}removed${_CLR_RESET} ${_CLR_ACCENT}(NetworkManager, DNF)${_CLR_RESET}"
 }
 
-# Check if shell proxy is enabled
+# Check proxy status across all layers
 _proxy_status() {
+    local has_issue=0
+
+    # 1. Shell environment
     if [[ -n "$http_proxy" || -n "$https_proxy" ]]; then
-        echo -e "${_CLR_SUCCESS}${_CLR_BOLD}●${_CLR_RESET} ${_CLR_DIM}Proxy is${_CLR_RESET} ${_CLR_SUCCESS}${_CLR_BOLD}ENABLED${_CLR_RESET}"
-        return 0
+        echo -e "${_CLR_SUCCESS}${_CLR_BOLD}●${_CLR_RESET} ${_CLR_DIM}Shell proxy:${_CLR_RESET}    ${_CLR_SUCCESS}${_CLR_BOLD}ENABLED${_CLR_RESET}  ${_CLR_DIM}(${http_proxy:-$https_proxy})${_CLR_RESET}"
     else
-        echo -e "${_CLR_ERROR}${_CLR_BOLD}●${_CLR_RESET} ${_CLR_DIM}Proxy is${_CLR_RESET} ${_CLR_ERROR}${_CLR_BOLD}DISABLED${_CLR_RESET}"
-        return 1
+        echo -e "${_CLR_ERROR}${_CLR_BOLD}●${_CLR_RESET} ${_CLR_DIM}Shell proxy:${_CLR_RESET}    ${_CLR_ERROR}${_CLR_BOLD}DISABLED${_CLR_RESET}"
+        has_issue=1
     fi
+
+    # 2. KDE system proxy
+    local kde_type=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key ProxyType 2>/dev/null)
+    if [[ "$kde_type" == "1" ]]; then
+        local kde_proxy=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy 2>/dev/null)
+        echo -e "${_CLR_SUCCESS}${_CLR_BOLD}●${_CLR_RESET} ${_CLR_DIM}System proxy:${_CLR_RESET}   ${_CLR_SUCCESS}${_CLR_BOLD}ENABLED${_CLR_RESET}  ${_CLR_DIM}(${kde_proxy})${_CLR_RESET}"
+    else
+        echo -e "${_CLR_ERROR}${_CLR_BOLD}●${_CLR_RESET} ${_CLR_DIM}System proxy:${_CLR_RESET}   ${_CLR_ERROR}${_CLR_BOLD}DISABLED${_CLR_RESET}"
+        has_issue=1
+    fi
+
+    # 3. Redsocks
+    if systemctl is-active --quiet redsocks 2>/dev/null; then
+        echo -e "${_CLR_SUCCESS}${_CLR_BOLD}●${_CLR_RESET} ${_CLR_DIM}Redsocks:${_CLR_RESET}       ${_CLR_SUCCESS}${_CLR_BOLD}ENABLED${_CLR_RESET}"
+    else
+        echo -e "${_CLR_ERROR}${_CLR_BOLD}●${_CLR_RESET} ${_CLR_DIM}Redsocks:${_CLR_RESET}       ${_CLR_ERROR}${_CLR_BOLD}DISABLED${_CLR_RESET}"
+    fi
+
+    return $has_issue
 }
 
-# Toggle shell proxy based on system settings
+# Toggle shell proxy based on KDE system settings
 _proxyauto() {
-    local proxy_status=$(gsettings get org.gnome.system.proxy mode)
+    local kde_type=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key ProxyType 2>/dev/null)
 
-    if [[ "$proxy_status" == "'none'" ]]; then
-        _proxyoff --local
-    else
+    if [[ "$kde_type" == "1" ]]; then
         _proxyon --local
+    else
+        _proxyoff --local
     fi
 }
 
@@ -215,7 +241,10 @@ _proxy_redsocks() {
   case "$command" in
     enable)
       if [[ -z "$ip" ]]; then
-        ip=$(gsettings get org.gnome.system.proxy.http host | tr -d "'")
+        # Read proxy IP from KDE system settings
+        local proxy_url=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy 2>/dev/null)
+        # Extract IP from URL like http://user:pass@IP:port
+        ip=$(echo "$proxy_url" | sed -E 's|https?://([^:@]*:)?([^:@]*@)?||; s|:.*||')
       fi
       pkexec /usr/local/sbin/proxyredsocks enable "$ip"
       ;;
@@ -282,22 +311,38 @@ _proxy_test() {
 _proxy_get() {
     echo -e "${_CLR_INFO}${_CLR_BOLD}Current Proxy Settings:${_CLR_RESET}"
 
-    # Display system proxy settings
-    local system_mode=$(gsettings get org.gnome.system.proxy mode)
-    local system_http=$(gsettings get org.gnome.system.proxy.http host)
-    local system_https=$(gsettings get org.gnome.system.proxy.https host)
+    # Display KDE system proxy settings
+    local kde_type=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key ProxyType 2>/dev/null)
+    local kde_http=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy 2>/dev/null)
+    local kde_https=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpsProxy 2>/dev/null)
+    local kde_noproxy=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key NoProxyFor 2>/dev/null)
 
-    echo -e "${_CLR_ACCENT}System Proxy:${_CLR_RESET}"
-    echo -e "  Mode: ${_CLR_DIM}$system_mode${_CLR_RESET}"
-    echo -e "  HTTP: ${_CLR_DIM}$system_http${_CLR_RESET}"
-    echo -e "  HTTPS: ${_CLR_DIM}$system_https${_CLR_RESET}"
+    local mode_label="None"
+    [[ "$kde_type" == "1" ]] && mode_label="Manual"
+    [[ "$kde_type" == "2" ]] && mode_label="PAC"
+    [[ "$kde_type" == "3" ]] && mode_label="Auto-detect"
+    [[ "$kde_type" == "4" ]] && mode_label="System"
+
+    echo -e "${_CLR_ACCENT}KDE System Proxy:${_CLR_RESET}"
+    echo -e "  Mode:     ${_CLR_DIM}$mode_label (ProxyType=$kde_type)${_CLR_RESET}"
+    echo -e "  HTTP:     ${_CLR_DIM}${kde_http:-Not Set}${_CLR_RESET}"
+    echo -e "  HTTPS:    ${_CLR_DIM}${kde_https:-Not Set}${_CLR_RESET}"
+    echo -e "  NoProxy:  ${_CLR_DIM}${kde_noproxy:-Not Set}${_CLR_RESET}"
 
     # Display environment proxy settings
     echo -e "${_CLR_ACCENT}Environment Proxy:${_CLR_RESET}"
-    echo -e "  http_proxy: ${_CLR_DIM}${http_proxy:-Not Set}${_CLR_RESET}"
+    echo -e "  http_proxy:  ${_CLR_DIM}${http_proxy:-Not Set}${_CLR_RESET}"
     echo -e "  https_proxy: ${_CLR_DIM}${https_proxy:-Not Set}${_CLR_RESET}"
-    echo -e "  HTTP_PROXY: ${_CLR_DIM}${HTTP_PROXY:-Not Set}${_CLR_RESET}"
+    echo -e "  HTTP_PROXY:  ${_CLR_DIM}${HTTP_PROXY:-Not Set}${_CLR_RESET}"
     echo -e "  HTTPS_PROXY: ${_CLR_DIM}${HTTPS_PROXY:-Not Set}${_CLR_RESET}"
+
+    # Display redsocks status
+    echo -e "${_CLR_ACCENT}Redsocks:${_CLR_RESET}"
+    if systemctl is-active --quiet redsocks 2>/dev/null; then
+        echo -e "  Status:  ${_CLR_SUCCESS}${_CLR_BOLD}Active${_CLR_RESET}"
+    else
+        echo -e "  Status:  ${_CLR_DIM}Inactive${_CLR_RESET}"
+    fi
 }
 
 # Display help information

@@ -1,0 +1,20 @@
+[
+    {
+        "name": "Proxy 1",
+        "ip": "172.31.100.25",
+        "user": "edcguest",
+        "password": "edcguest"
+    },
+    {
+        "name": "Proxy 2",
+        "ip": "172.31.100.27",
+        "user": "edcguest",
+        "password": "edcguest"
+    },
+    {
+        "name": "Proxy 3",
+        "ip": "172.31.102.29",
+        "user": "edcguest",
+        "password": "edcguest"
+    }
+]
