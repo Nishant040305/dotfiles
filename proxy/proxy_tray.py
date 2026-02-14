@@ -20,6 +20,7 @@ Depends on:
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -459,6 +460,16 @@ class ProxyManager:
 
 
 def main():
+    # Enforce single instance using abstract namespace socket
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        # The null byte at the start specifies abstract namespace (Linux only)
+        # If bind fails, another instance is already holding the lock
+        s.bind('\0proxy_manager_tray_lock')
+    except socket.error:
+        print("Proxy Manager is already running.")
+        sys.exit(0)
+
     # Allow Ctrl-C to kill the process cleanly
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
