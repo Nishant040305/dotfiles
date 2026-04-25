@@ -1,0 +1,16 @@
+# Install with:
+#   sudo install -m 0440 -o root -g root sudoers/proxy-nopasswd.sudoers /etc/sudoers.d/proxy-nopasswd
+#
+# Adjust "Nishant" to your username if needed.
+
+User_Alias PROXYUSER = Nishant
+
+# Allow running the proxy helper operations without a password prompt.
+Cmnd_Alias PROXY_CMDS = \
+  /usr/bin/tee /etc/NetworkManager/conf.d/20-connectivity.conf, \
+  /usr/bin/rm -f /etc/NetworkManager/conf.d/20-connectivity.conf, \
+  /usr/bin/systemctl restart NetworkManager, \
+  /usr/bin/tee /etc/dnf/dnf.conf
+
+PROXYUSER ALL=(root) NOPASSWD: PROXY_CMDS
+

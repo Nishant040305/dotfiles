@@ -267,6 +267,12 @@ class ProxyManager:
 
         self._refresh(icon)
 
+    def _toggle_proxy(self, icon, _item):
+        if self.is_proxy_on():
+            self._disable_proxy(icon, _item)
+        else:
+            self._enable_proxy(icon, _item)
+
     # ── Actions: Redsocks ──────────────────────────────────────
 
     def _enable_redsocks(self, icon, _item):
@@ -296,6 +302,12 @@ class ProxyManager:
             self._notify("Redsocks Error", str(exc), "critical")
 
         self._refresh(icon)
+
+    def _toggle_redsocks(self, icon, _item):
+        if self.is_redsocks_on():
+            self._disable_redsocks(icon, _item)
+        else:
+            self._enable_redsocks(icon, _item)
 
     # ── Actions: Change Proxy ──────────────────────────────────
 
@@ -397,6 +409,12 @@ class ProxyManager:
             s = "ON" if self.is_redsocks_on() else "OFF"
             return f"🔀  Redsocks: {s}  ({self.redsocks_selection['ip']})"
 
+        def proxy_toggle_label(_mi):
+            return "Disable Proxy" if self.is_proxy_on() else "Enable Proxy"
+
+        def redsocks_toggle_label(_mi):
+            return "Disable Redsocks" if self.is_redsocks_on() else "Enable Redsocks"
+
         return pystray.Menu(
             # ── Status (read-only) ──
             item(proxy_label, None, enabled=False),
@@ -404,14 +422,12 @@ class ProxyManager:
             pystray.Menu.SEPARATOR,
 
             # ── Proxy controls ──
-            item("Enable Proxy", self._enable_proxy),
-            item("Disable Proxy", self._disable_proxy),
+            item(proxy_toggle_label, self._toggle_proxy),
             item("Change Proxy…", self._change_proxy),
             pystray.Menu.SEPARATOR,
 
             # ── Redsocks controls ──
-            item("Enable Redsocks", self._enable_redsocks),
-            item("Disable Redsocks", self._disable_redsocks),
+            item(redsocks_toggle_label, self._toggle_redsocks),
             item("Change Redsocks Proxy…", self._change_redsocks_proxy),
             pystray.Menu.SEPARATOR,
 
@@ -423,6 +439,13 @@ class ProxyManager:
     def _refresh(self, icon):
         icon.icon = self._render_icon()
         icon.title = self._tooltip()
+        try:
+            icon.menu = self._build_menu()
+            update_menu = getattr(icon, "update_menu", None)
+            if callable(update_menu):
+                update_menu()
+        except Exception:
+            pass
 
     def _monitor(self, icon):
         """Background thread — poll status every POLL_INTERVAL seconds."""

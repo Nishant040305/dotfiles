@@ -26,3 +26,14 @@ Manages system-wide TCP traffic redirection through redsocks, enabling transpare
    sudo install -m 644 -o root -g root ~/.dotfiles/misc/redsocks.conf.template /etc/redsocks.conf.template
    ```
 
+## Passwordless auth (optional)
+
+If you want the `proxy` terminal commands to work without repeatedly asking for your sudo password, install the sudoers snippet:
+
+```bash
+sudo install -m 0440 -o root -g root sudoers/proxy-nopasswd.sudoers /etc/sudoers.d/proxy-nopasswd
+```
+
+Notes:
+- Edit `sudoers/proxy-nopasswd.sudoers` and replace `Nishant` with your username.
+- Redsocks uses `pkexec` + PolicyKit (see `90-proxyredsocks.rules.js`) so it typically won’t prompt after the rule is installed.

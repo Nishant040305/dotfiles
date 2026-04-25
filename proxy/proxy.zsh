@@ -39,6 +39,9 @@ _proxy_shell() {
         disable)
             _proxyoff
             ;;
+        toggle)
+            _proxy_shell_toggle "$2"
+            ;;
         configure)
             _proxyauto
             ;;
@@ -47,10 +50,21 @@ _proxy_shell() {
             ;;
         *)
             echo -e "${_CLR_ERROR}Unknown shell subcommand: $subcommand${_CLR_RESET}"
-            echo "Usage: proxy shell {enable|disable|configure|status}"
+            echo "Usage: proxy shell {enable|disable|toggle|configure|status}"
             return 1
             ;;
     esac
+}
+
+# Toggle shell proxy based on current environment variables
+_proxy_shell_toggle() {
+    local flag="$1"
+
+    if [[ -n "${http_proxy:-}" || -n "${https_proxy:-}" || -n "${HTTP_PROXY:-}" || -n "${HTTPS_PROXY:-}" ]]; then
+        _proxyoff "$flag"
+    else
+        _proxyon "$flag"
+    fi
 }
 
 # System proxy management
@@ -147,12 +161,12 @@ _proxyon() {
 
     echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ Environment${_CLR_RESET} ${_CLR_DIM}proxy set to${_CLR_RESET} ${_CLR_INFO}$proxy_url${_CLR_RESET}"
 
+    # Keep KDE system proxy UI in sync so tray/status match shell toggles
+    kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key ProxyType 1 2>/dev/null || true
+
     if [[ "$1" == "--local" ]]; then
         return
     fi
-
-    echo -e "${_CLR_INFO}${_CLR_BOLD}⟳ Authenticating${_CLR_RESET} ${_CLR_DIM}to update NetworkManager/conf.d and dnf/dnf.conf...${_CLR_RESET}"
-    sudo -v || return 1
 
     {
         echo "[connectivity]"
@@ -175,12 +189,12 @@ _proxyoff() {
     unset HTTP_PROXY
     unset HTTPS_PROXY
 
+    # Keep KDE system proxy UI in sync so tray/status match shell toggles
+    kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key ProxyType 0 2>/dev/null || true
+
     if [[ "$1" == "--local" ]]; then
         return
     fi
-
-    echo -e "${_CLR_INFO}${_CLR_BOLD}⟳ Authenticating${_CLR_RESET} ${_CLR_DIM}to restore system configuration...${_CLR_RESET}"
-    sudo -v || return 1
 
     sudo rm -f "/etc/NetworkManager/conf.d/20-connectivity.conf"
     sudo systemctl restart NetworkManager
@@ -251,14 +265,28 @@ _proxy_redsocks() {
     disable)
       pkexec /usr/local/sbin/proxyredsocks disable
       ;;
+    toggle)
+      if systemctl is-active --quiet redsocks 2>/dev/null; then
+        pkexec /usr/local/sbin/proxyredsocks disable
+        return $?
+      fi
+
+      if [[ -z "$ip" ]]; then
+        local proxy_url=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy 2>/dev/null)
+        ip=$(echo "$proxy_url" | sed -E 's|https?://([^:@]*:)?([^:@]*@)?||; s|:.*||')
+      fi
+      pkexec /usr/local/sbin/proxyredsocks enable "$ip"
+      ;;
     status)
       pkexec /usr/local/sbin/proxyredsocks status
       ;;
     *)
-      echo -e "${_CLR_ERROR}Usage: proxy redsocks {enable|disable|status} [IP]${_CLR_RESET}"
+      echo -e "${_CLR_ERROR}Usage: proxy redsocks {enable|disable|toggle|status} [IP]${_CLR_RESET}"
       echo "Examples:"
       echo "  proxy redsocks enable             (uses system proxy)"
       echo "  proxy redsocks enable 172.31.1.100"
+      echo "  proxy redsocks toggle             (enable/disable based on current status)"
+      echo "  proxy redsocks toggle 172.31.1.100"
       echo "  proxy redsocks disable"
       echo "  proxy redsocks status"
       return 1
@@ -358,6 +386,8 @@ SHELL PROXY COMMANDS:
                                 Updates NetworkManager and DNF configurations (Use --local to avoid)
   proxy shell disable           Disable shell proxy
                                 Restores NetworkManager and DNF configurations (Use --local to avoid)
+  proxy shell toggle            Toggle shell proxy (based on env vars)
+                                Uses same system updates as enable/disable (Use --local to avoid)
   proxy shell configure         Auto-configure shell proxy based on system settings
                                 Enables if system proxy mode is not 'none', disables otherwise
   proxy shell status            Show current shell proxy status
@@ -372,6 +402,7 @@ REDSOCKS REDIRECTION COMMANDS:
   proxy redsocks enable [IP]    Enable transparent proxy redirection
                                 IP: proxy IP (optional, defaults to system proxy)
   proxy redsocks disable        Disable transparent proxy redirection
+  proxy redsocks toggle [IP]    Toggle transparent proxy redirection (enable/disable)
   proxy redsocks status         Show transparent proxy status
 
 GENERAL COMMANDS:
