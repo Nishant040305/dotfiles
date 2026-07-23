@@ -29,3 +29,9 @@ export ANDROID_HOME=$HOME/Android/Sdk
 export ANDROID_SDK_ROOT=$HOME/Android/Sdk
 export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+export PATH=$PATH:/snap/bin
+export PATH=$PATH:/usr/local/go/bin
+
+
+# Added by Antigravity CLI installer
+export PATH="/home/Nishant/.local/bin:$PATH"
