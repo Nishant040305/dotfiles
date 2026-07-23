@@ -35,3 +35,7 @@ export PATH=$PATH:/usr/local/go/bin
 
 # Added by Antigravity CLI installer
 export PATH="/home/Nishant/.local/bin:$PATH"
+
+# Shared environment & modular aliases
+[ -f "$HOME/.envrc" ] && source "$HOME/.envrc"
+

@@ -1,0 +1,67 @@
+// Place your key bindings in this file to override the defaults
+[
+  {
+    "key": "ctrl+oem_7",
+    "command": "cph.runTestCases"
+  },
+  {
+    "key": "ctrl+alt+b",
+    "command": "-cph.runTestCases"
+  },
+  {
+    "key": "ctrl+enter",
+    "command": "-github.copilot.generate",
+    "when": "editorTextFocus && github.copilot.activated && !commentEditorFocused && !inInteractiveInput && !interactiveEditorFocused"
+  },
+  {
+    "key": "alt+oem_3",
+    "command": "-workbench.action.editorDictation.start",
+    "when": "hasSpeechProvider && !editorReadonly && !speechToTextInProgress"
+  },
+  {
+    "key": "alt+oem_3",
+    "command": "openInIntegratedTerminal"
+  },
+  {
+    "key": "ctrl+1",
+    "command": "-workbench.action.focusFirstEditorGroup"
+  },
+  {
+    "key": "ctrl+1",
+    "command": "workbench.action.toggleSidebarVisibility"
+  },
+  {
+    "key": "ctrl+2",
+    "command": "-workbench.action.focusSecondEditorGroup"
+  },
+  {
+    "key": "ctrl+2",
+    "command": "workbench.action.toggleAuxiliaryBar"
+  },
+  {
+    "key": "ctrl+alt+w",
+    "command": "workbench.action.terminal.kill"
+  },
+  {
+    "key": "shift+alt+oem_3",
+    "command": "workbench.action.terminal.openNativeConsole",
+    "when": "!terminalFocus"
+  },
+  {
+    "key": "ctrl+shift+c",
+    "command": "-workbench.action.terminal.openNativeConsole",
+    "when": "!terminalFocus"
+  },
+  {
+    "key": "ctrl+3",
+    "command": "-workbench.action.focusThirdEditorGroup"
+  },
+  {
+    "key": "ctrl+3",
+    "command": "workbench.action.togglePanel"
+  },
+  {
+    "key": "ctrl+j",
+    "command": "-workbench.action.togglePanel"
+  }
+]

@@ -24,6 +24,9 @@ if [ -d ~/.bashrc.d ]; then
 fi
 unset rc
 
-# Oh My Posh
+# Shared environment
+[ -f "$HOME/.envrc" ] && source "$HOME/.envrc"
 
+# Oh My Posh
 eval "$(oh-my-posh init bash --config ~/.prompt.omp.json)"
+
