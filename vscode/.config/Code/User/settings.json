@@ -1,0 +1,186 @@
+{
+  // =========================
+  // UI & WORKBENCH
+  // =========================
+  "workbench.startupEditor": "none",
+  "workbench.iconTheme": "material-icon-theme",
+  "workbench.activityBar.location": "top",
+  "workbench.editor.empty.hint": "hidden",
+  "workbench.preferredHighContrastColorTheme": "Dark Modern",
+
+  "window.zoomLevel": -0.7,
+  "window.menuBarVisibility": "toggle",
+  "window.titleBarStyle": "custom",
+  "window.confirmSaveUntitledWorkspace": false,
+
+  // =========================
+  // COLORS
+  // =========================
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#141414",
+    "titleBar.inactiveBackground": "#1F1F1F",
+    "titleBar.activeForeground": "#CCCCCC",
+    "titleBar.inactiveForeground": "#999999",
+    "titleBar.border": "#2B2B2B"
+  },
+
+  // =========================
+  // EDITOR
+  // =========================
+  "editor.fontSize": 15,
+  "editor.fontFamily": "'MesloLGS NF'",
+  "editor.minimap.enabled": true,
+  "editor.minimap.autohide": "mouseover",
+  "editor.mouseWheelScrollSensitivity": 2.5,
+
+  // =========================
+  // TERMINAL
+  // =========================
+  "terminal.integrated.defaultProfile.linux": "zsh",
+  "terminal.integrated.fontSize": 14,
+  "terminal.integrated.mouseWheelScrollSensitivity": 2.5,
+  "terminal.integrated.enableMultiLinePasteWarning": "always",
+
+  // =========================
+  // GIT
+  // =========================
+  "git.autofetch": true,
+  "git.fetchOnPull": true,
+  "git.ignoreLegacyWarning": true,
+  "git.openRepositoryInParentFolders": "always",
+  "gitlens.ai.model": "vscode",
+  "gitlens.ai.vscode.model": "copilot:gpt-4o-mini",
+
+  // =========================
+  // AI / AUTOCOMPLETE
+  // =========================
+  "github.copilot.enable": {
+    "*": true,
+  },
+  "github.copilot.chat.scopeSelection": true,
+  "github.copilot.chat.codesearch.enabled": true,
+  "github.copilot.nextEditSuggestions.enabled": true,
+  "chat.unifiedAgentsBar.enabled": true,
+
+  // =========================
+  // C / C++
+  // =========================
+  "C_Cpp.default.compilerPath": "/usr/bin/g++",
+  "C_Cpp.default.cppStandard": "c++23",
+  "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+  "C_Cpp.codeAnalysis.runAutomatically": false,
+
+  "[cpp]": {
+    "editor.wordBasedSuggestions": "matchingDocuments",
+    "editor.semanticHighlighting.enabled": true,
+    "editor.stickyScroll.defaultModel": "foldingProviderModel",
+    "editor.suggest.insertMode": "replace"
+  },
+
+  // =========================
+  // COMPETITIVE PROGRAMMING
+  // =========================
+  "cph.general.defaultLanguage": "cpp",
+  "cph.general.ignoreSTDERROR": true,
+  "cph.general.timeOut": 10000,
+  "cph.general.menuChoices": "cpp java js python c",
+  "cph.language.cpp.Args": "--std=c++23",
+
+  // =========================
+  // PYTHON
+  // =========================
+  "python.terminal.useEnvFile": true,
+  "python.languageServer": "Default",
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "python.createEnvironment.trigger": "off",
+
+  // =========================
+  // JAVA
+  // =========================
+  "[java]": {
+    "editor.defaultFormatter": "redhat.java",
+    "editor.formatOnSave": false
+  },
+
+  // =========================
+  // JS / TS
+  // =========================
+  "js/ts.updateImportsOnFileMove.enabled": "always",
+
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 2
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 2
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 2
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 2
+  },
+
+  // =========================
+  // OTHER LANGUAGES
+  // =========================
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 2
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 2
+  },
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "editor.formatOnSave": false,
+    "editor.tabSize": 2
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+
+  // =========================
+  // FILES ASSOCIATIONS
+  // =========================
+  "files.associations": {
+    "*.asm": "retroasm_8085"
+  },
+  "files.exclude": {
+    "**/*.asm~": true
+  },
+  "workbench.editorAssociations": {
+    "*.copilotmd": "vscode.markdown.preview.editor",
+    "*.md": "markdown-preview-enhanced",
+    "*.markdown": "markdown-preview-enhanced",
+    "*.mdown": "markdown-preview-enhanced",
+    "*.mkdn": "markdown-preview-enhanced",
+    "*.mkd": "markdown-preview-enhanced",
+    "*.rmd": "markdown-preview-enhanced",
+    "*.qmd": "markdown-preview-enhanced",
+    "*.mdx": "markdown-preview-enhanced"
+  },
+
+  // =========================
+  // NOTEBOOK
+  // =========================
+  "notebook.output.scrolling": true,
+
+  // =========================
+  // EXTENSIONS
+  // =========================
+  "regionFold.regionNames": ["ultraaryan10", "TEMPLATE", "DEBUG"],
+  "markdown-preview-enhanced.previewMode": "Previews Only",
+  "workbench.browser.showInTitleBar": true,
+  "workbench.colorTheme": "Dark Modern",
+}

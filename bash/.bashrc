@@ -24,6 +24,19 @@ if [ -d ~/.bashrc.d ]; then
 fi
 unset rc
 
-# Oh My Posh
+# Shared environment & modular aliases
+if [ -f "$HOME/.envrc" ]; then
+    source "$HOME/.envrc"
+elif [ -f "$HOME/.dotfiles/shell/.envrc" ]; then
+    source "$HOME/.dotfiles/shell/.envrc"
+fi
 
+# Oh My Posh
 eval "$(oh-my-posh init bash --config ~/.prompt.omp.json)"
+
+# Auto-start tmux for interactive terminal sessions
+if [[ -z "$TMUX" && -n "$PS1" && "$TERM_PROGRAM" != "vscode" && -z "$VSCODE_INJECTION" ]]; then
+    exec tmux
+fi
+
+
