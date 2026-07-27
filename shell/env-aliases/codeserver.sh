@@ -1,3 +1,3 @@
 codeserver() {
-	code-server --bind-addr "${HOSTNAME:-fedora}":9000
+	code-server --bind-addr 0.0.0.0:9000
 }

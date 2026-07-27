@@ -37,5 +37,15 @@ export PATH=$PATH:/usr/local/go/bin
 export PATH="/home/Nishant/.local/bin:$PATH"
 
 # Shared environment & modular aliases
-[ -f "$HOME/.envrc" ] && source "$HOME/.envrc"
+if [ -f "$HOME/.envrc" ]; then
+    source "$HOME/.envrc"
+elif [ -f "$HOME/.dotfiles/shell/.envrc" ]; then
+    source "$HOME/.dotfiles/shell/.envrc"
+fi
+
+# Auto-start tmux for interactive terminal sessions (hiding status bar via .tmux.conf)
+if [[ -z "$TMUX" && -n "$PS1" && "$TERM_PROGRAM" != "vscode" && -z "$VSCODE_INJECTION" ]]; then
+    exec tmux
+fi
+
 
