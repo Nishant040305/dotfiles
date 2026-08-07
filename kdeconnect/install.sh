@@ -10,6 +10,7 @@ sudo install -m 440 -o root -g root "$DIR/sudoers-kdeconnect" /etc/sudoers.d/kde
 
 # Validate the sudoers file
 if sudo visudo -c -f /etc/sudoers.d/kdeconnect; then
+    echo "[+] Sudoers file valid."
 else
     echo "[!] Sudoers syntax error — removing broken file."
     sudo rm /etc/sudoers.d/kdeconnect
