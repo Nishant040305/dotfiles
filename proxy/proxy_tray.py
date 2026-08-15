@@ -120,6 +120,49 @@ class ProxyManager:
         except Exception:
             return False
 
+    def redsocks_nat_rules_present(self):
+        """
+        Best-effort check for NAT redirection rules.
+
+        Returns:
+            True  -> REDSOCKS rules are present
+            False -> redsocks is active, but the NAT rules are missing
+            None  -> unable to inspect rules without prompting for credentials
+        """
+        try:
+            r = subprocess.run(
+                ["sudo", "-n", "iptables", "-t", "nat", "-S"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode != 0:
+                return None
+
+            rules = r.stdout
+            return (
+                "-N REDSOCKS" in rules
+                or "-A OUTPUT -p tcp -j REDSOCKS" in rules
+                or "-A PREROUTING -p tcp -j REDSOCKS" in rules
+            )
+        except Exception:
+            return None
+
+    def redsocks_health(self):
+        """
+        Summarize redsocks state for UI display.
+
+        Returns:
+            "off", "on", "warn", or "unknown"
+        """
+        if not self.is_redsocks_on():
+            return "off"
+
+        rules_present = self.redsocks_nat_rules_present()
+        if rules_present is True:
+            return "on"
+        if rules_present is False:
+            return "warn"
+        return "unknown"
+
     def is_proxy_on(self):
         """Return True when KDE system proxy is set to Manual (ProxyType=1)."""
         try:
@@ -170,11 +213,15 @@ class ProxyManager:
     def _render_icon(self):
         """Return a 64×64 RGBA image reflecting current state."""
         proxy = self.is_proxy_on()
-        redsocks = self.is_redsocks_on()
+        redsocks_health = self.redsocks_health()
 
-        if proxy and redsocks:
+        if proxy and redsocks_health == "on":
             bg, label = CLR_BOTH, "PR"
-        elif redsocks:
+        elif redsocks_health == "warn":
+            bg, label = (230, 126, 34), "!"
+        elif redsocks_health == "unknown":
+            bg, label = (127, 140, 141), "?"
+        elif redsocks_health == "on":
             bg, label = CLR_REDSOCKS, "R"
         elif proxy:
             bg, label = CLR_PROXY, "P"
@@ -207,7 +254,15 @@ class ProxyManager:
 
     def _tooltip(self):
         proxy = "ON" if self.is_proxy_on() else "OFF"
-        redsocks = "ON" if self.is_redsocks_on() else "OFF"
+        redsocks_health = self.redsocks_health()
+        if redsocks_health == "on":
+            redsocks = "ON"
+        elif redsocks_health == "warn":
+            redsocks = "ON (NO NAT RULES)"
+        elif redsocks_health == "unknown":
+            redsocks = "ON (RULES UNKNOWN)"
+        else:
+            redsocks = "OFF"
         return (
             f"Proxy: {proxy} ({self.proxy_selection['ip']})  |  "
             f"Redsocks: {redsocks} ({self.redsocks_selection['ip']})"
@@ -406,7 +461,15 @@ class ProxyManager:
             return f"🔌  Proxy: {s}  ({self.proxy_selection['ip']})"
 
         def redsocks_label(_mi):
-            s = "ON" if self.is_redsocks_on() else "OFF"
+            health = self.redsocks_health()
+            if health == "on":
+                s = "ON"
+            elif health == "warn":
+                s = "ON !"
+            elif health == "unknown":
+                s = "ON ?"
+            else:
+                s = "OFF"
             return f"🔀  Redsocks: {s}  ({self.redsocks_selection['ip']})"
 
         def proxy_toggle_label(_mi):
@@ -472,7 +535,15 @@ class ProxyManager:
         def on_setup(icon):
             icon.visible = True
             proxy_s = "ON" if self.is_proxy_on() else "OFF"
-            redsocks_s = "ON" if self.is_redsocks_on() else "OFF"
+            redsocks_health = self.redsocks_health()
+            if redsocks_health == "on":
+                redsocks_s = "ON"
+            elif redsocks_health == "warn":
+                redsocks_s = "ON (NO NAT RULES)"
+            elif redsocks_health == "unknown":
+                redsocks_s = "ON (RULES UNKNOWN)"
+            else:
+                redsocks_s = "OFF"
             self._notify(
                 "Proxy Manager",
                 f"Proxy: {proxy_s} ({self.proxy_selection['ip']})\n"

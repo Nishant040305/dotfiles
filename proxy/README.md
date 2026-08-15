@@ -4,26 +4,33 @@ Manages system-wide TCP traffic redirection through redsocks, enabling transpare
 
 ## Files
 
-- **proxyredsocks.zsh** - Main proxy management script
-- **90-proxyredsocks.rules.js** - PolicyKit authorization rule
-- **redsocks.conf.template** - Redsocks configuration template
+- **script/proxyredsocks.sh** - Main proxy management script
+- **rules/90-proxyredsocks.rules.js** - PolicyKit authorization rule
+- **config/redsocks.conf.template** - Redsocks configuration template
+- **bin/redsocks2** - Bundled redsocks2 binary used by the service
 
 ## Installation
 
 1. Install the main script:
    ```bash
-   sudo install -m 755 -o root -g root ~/.dotfiles/misc/proxyredsocks.zsh /usr/local/sbin/proxyredsocks
+   sudo install -m 755 -o root -g root ~/.dotfiles/proxy/script/proxyredsocks.sh /usr/local/sbin/proxyredsocks
    ```
 
 2. Install the PolicyKit rule:
    ```bash
-   sudo install -m 644 -o root -g root ~/.dotfiles/misc/90-proxyredsocks.rules.js /etc/polkit-1/rules.d/90-proxyredsocks.rules
+   sudo install -m 644 -o root -g root ~/.dotfiles/proxy/rules/90-proxyredsocks.rules.js /etc/polkit-1/rules.d/90-proxyredsocks.rules
    sudo systemctl restart polkit
    ```
 
 3. Install the redsocks configuration template:
    ```bash
-   sudo install -m 644 -o root -g root ~/.dotfiles/misc/redsocks.conf.template /etc/redsocks.conf.template
+   sudo install -m 644 -o root -g root ~/.dotfiles/proxy/config/redsocks.conf.template /etc/redsocks.conf.template
+   ```
+
+4. Install the bundled redsocks2 binary:
+   ```bash
+   sudo install -m 755 -o root -g root ~/.dotfiles/proxy/bin/redsocks2 /usr/local/bin/redsocks2
+   sudo ln -sf redsocks2 /usr/local/bin/redsocks
    ```
 
 ## Passwordless auth (optional)

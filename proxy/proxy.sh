@@ -258,13 +258,11 @@ _proxy_redsocks() {
   
   case "$command" in
     enable)
-      if [[ -z "$ip" ]]; then
-        # Read proxy IP from KDE system settings
-        local proxy_url=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy 2>/dev/null)
-        # Extract IP from URL like http://user:pass@IP:port
-        ip=$(echo "$proxy_url" | sed -E 's|https?://([^:@]*:)?([^:@]*@)?||; s|:.*||')
+      if [[ -n "$ip" ]]; then
+        pkexec /usr/local/sbin/proxyredsocks enable "$ip"
+      else
+        pkexec /usr/local/sbin/proxyredsocks enable
       fi
-      pkexec /usr/local/sbin/proxyredsocks enable "$ip"
       ;;
     disable)
       pkexec /usr/local/sbin/proxyredsocks disable
@@ -275,11 +273,11 @@ _proxy_redsocks() {
         return $?
       fi
 
-      if [[ -z "$ip" ]]; then
-        local proxy_url=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy 2>/dev/null)
-        ip=$(echo "$proxy_url" | sed -E 's|https?://([^:@]*:)?([^:@]*@)?||; s|:.*||')
+      if [[ -n "$ip" ]]; then
+        pkexec /usr/local/sbin/proxyredsocks enable "$ip"
+      else
+        pkexec /usr/local/sbin/proxyredsocks enable
       fi
-      pkexec /usr/local/sbin/proxyredsocks enable "$ip"
       ;;
     status)
       pkexec /usr/local/sbin/proxyredsocks status

@@ -2,17 +2,32 @@ base {
   log_debug = off;
   log_info = on;
   log = stderr;
-  daemon = on;
+  daemon = off;
   redirector = iptables;
 }
 
+// HTTP relay for transparent port 80 traffic (translates transparent requests to proxy HTTP format)
 redsocks {
-  // Listen on all interfaces so forwarded hotspot traffic can reach us
-  // (PREROUTING REDIRECT rewrites dst to the incoming interface IP, not 127.0.0.1)
   bind = "0.0.0.0:12345";
   relay = "__PROXY_IP__:3128";
-  type = http-connect;
-
+  type = http-relay;
   login = "edcguest";
   password = "edcguest";
+}
+
+// HTTP CONNECT tunnel for HTTPS (port 443) and all other TCP traffic (including TCP DNS)
+redsocks {
+  bind = "0.0.0.0:12346";
+  relay = "__PROXY_IP__:3128";
+  type = http-connect;
+  login = "edcguest";
+  password = "edcguest";
+}
+
+// Local DNS forwarder: converts UDP DNS queries to TCP DNS queries routed through the proxy
+tcpdns {
+  bind = "0.0.0.0:1053";
+  tcpdns1 = "8.8.8.8:53";
+  tcpdns2 = "1.1.1.1:53";
+  timeout = 4;
 }

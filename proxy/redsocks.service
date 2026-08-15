@@ -6,13 +6,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=forking
-PIDFile=/run/redsocks.pid
+Type=simple
+User=redsocks
 
-ExecStartPre=/usr/local/bin/redsocks -t -c /etc/redsocks.conf
-ExecStart=/usr/local/bin/redsocks \
-    -c /etc/redsocks.conf \
-    -p /run/redsocks.pid
+ExecStartPre=/usr/local/bin/redsocks2 -t -c /etc/redsocks.conf
+ExecStart=/usr/local/bin/redsocks2 -c /etc/redsocks.conf
 
 Restart=on-failure
 RestartSec=2
