@@ -1,0 +1,25 @@
+[Unit]
+Description=Redsocks2 transparent proxy redirector
+Documentation=man:redsocks(8)
+Before=shutdown.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+PIDFile=/run/redsocks.pid
+
+ExecStartPre=/usr/local/bin/redsocks -t -c /etc/redsocks.conf
+ExecStart=/usr/local/bin/redsocks \
+    -c /etc/redsocks.conf \
+    -p /run/redsocks.pid
+
+Restart=on-failure
+RestartSec=2
+
+TimeoutStopFailureMode=kill
+TimeoutStopSec=1min
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

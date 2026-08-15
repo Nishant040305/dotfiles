@@ -1,0 +1,694 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import sys
+import termios
+import time
+import tty
+from pathlib import Path
+
+from rich.console import Console, Group
+from rich.live import Live
+from rich.text import Text
+
+
+# =============================================================================
+# CONFIG
+# =============================================================================
+
+CACHE_SIZE = "10G"
+BUFFER_SIZE = "256M"
+
+MOUNTS = [
+    {
+        "name": "gdrive",
+        "remote": "gdrive:",
+        "path": Path.home() / "gdrive",
+        "extra": [],
+    },
+    {
+        "name": "gdrive-u",
+        "remote": "gdrive-u:",
+        "path": Path.home() / "gdrive-u",
+        "extra": [],
+    },
+    {
+        "name": "shared",
+        "remote": "gdrive:",
+        "path": Path.home() / "gdrive-shared",
+        "extra": ["--drive-shared-with-me"],
+    },
+]
+
+AUTH_WORDS = (
+    "oauth",
+    "invalid_grant",
+    "token",
+    "expired",
+    "unauthorized",
+)
+
+
+# =============================================================================
+# UI
+# =============================================================================
+
+console = Console()
+
+ACTION_WIDTH = len("AUTHENTICATE")
+ARROW_WIDTH = 2
+NAME_WIDTH = 12
+ACTION_GAP = 2
+
+STATUS = {
+    "mounted": (
+        "● mounted",
+        "green",
+    ),
+    "offline": (
+        "○ offline",
+        "bright_black",
+    ),
+    "auth": (
+        "! auth required",
+        "yellow",
+    ),
+    "error": (
+        "? unavailable",
+        "red",
+    ),
+}
+
+ACTION = {
+    "mounted": (
+        "UNMOUNT",
+        "red",
+    ),
+    "offline": (
+        "MOUNT",
+        "green",
+    ),
+    "auth": (
+        "AUTHENTICATE",
+        "blue",
+    ),
+    "error": (
+        "RETRY",
+        "yellow",
+    ),
+}
+
+
+# =============================================================================
+# TERMINAL
+# =============================================================================
+
+OLD_TERMIOS = None
+
+
+def enter_raw_mode():
+    global OLD_TERMIOS
+
+    OLD_TERMIOS = termios.tcgetattr(sys.stdin)
+
+    tty.setcbreak(sys.stdin.fileno())
+
+
+def leave_raw_mode():
+    global OLD_TERMIOS
+
+    if OLD_TERMIOS is not None:
+        termios.tcsetattr(
+            sys.stdin,
+            termios.TCSADRAIN,
+            OLD_TERMIOS,
+        )
+
+        OLD_TERMIOS = None
+
+
+# =============================================================================
+# RCLONE
+# =============================================================================
+
+def mounted(path: Path) -> bool:
+    return (
+        subprocess.run(
+            ["mountpoint", "-q", str(path)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
+
+
+def remote_ok(remote: str):
+    result = subprocess.run(
+        ["rclone", "about", remote],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    return result.returncode == 0, result.stderr or ""
+
+
+def authentication_error(stderr: str) -> bool:
+    stderr = stderr.lower()
+
+    return any(
+        word in stderr
+        for word in AUTH_WORDS
+    )
+
+
+def get_state(cfg):
+    if mounted(cfg["path"]):
+        return "mounted"
+
+    ok, stderr = remote_ok(cfg["remote"])
+
+    if ok:
+        return "offline"
+
+    if authentication_error(stderr):
+        return "auth"
+
+    return "error"
+
+
+def get_states():
+    return {
+        cfg["name"]: get_state(cfg)
+        for cfg in MOUNTS
+    }
+
+
+# =============================================================================
+# MOUNT / UNMOUNT
+# =============================================================================
+
+def mount_one(cfg) -> bool:
+    path = cfg["path"]
+
+    path.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    ok, _ = remote_ok(cfg["remote"])
+
+    if not ok:
+        return False
+
+    command = [
+        "rclone",
+        "mount",
+        cfg["remote"],
+        str(path),
+        "--daemon",
+        "--vfs-cache-mode",
+        "full",
+        "--vfs-cache-max-size",
+        CACHE_SIZE,
+        "--buffer-size",
+        BUFFER_SIZE,
+        *cfg["extra"],
+    ]
+
+    result = subprocess.run(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        return False
+
+    time.sleep(1.5)
+
+    return mounted(path)
+
+
+def unmount_one(cfg) -> bool:
+    path = cfg["path"]
+
+    result = subprocess.run(
+        ["fusermount", "-u", str(path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    if result.returncode == 0:
+        return True
+
+    result = subprocess.run(
+        ["fusermount", "-uz", str(path)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    return result.returncode == 0
+
+
+# =============================================================================
+# AUTHENTICATION
+# =============================================================================
+
+def authenticate(cfg) -> bool:
+    """
+    Temporarily return the terminal to rclone.
+    """
+
+    leave_raw_mode()
+
+    try:
+        result = subprocess.run(
+            [
+                "rclone",
+                "config",
+                "reconnect",
+                cfg["remote"],
+            ]
+        )
+    finally:
+        enter_raw_mode()
+
+    return result.returncode == 0
+
+
+# =============================================================================
+# ACTION
+# =============================================================================
+
+def activate(cfg, state):
+    if state == "mounted":
+        return unmount_one(cfg)
+
+    if state == "offline":
+        return mount_one(cfg)
+
+    if state == "auth":
+        return authenticate(cfg)
+
+    return mount_one(cfg)
+
+
+# =============================================================================
+# RENDERING
+# =============================================================================
+
+def make_line(
+    cfg,
+    state,
+    selected,
+    busy=None,
+):
+    line = Text()
+
+    # -------------------------------------------------------------------------
+    # Action / busy column
+    # -------------------------------------------------------------------------
+
+    if selected:
+
+        if busy:
+            line.append(
+                f"{busy:<{ACTION_WIDTH}}",
+                style="bold cyan",
+            )
+
+        else:
+            action_text, action_style = ACTION[state]
+
+            line.append(
+                f"{action_text:<{ACTION_WIDTH}}",
+                style=f"bold {action_style}",
+            )
+
+    else:
+        line.append(
+            " " * ACTION_WIDTH,
+        )
+
+    # -------------------------------------------------------------------------
+    # Gap
+    # -------------------------------------------------------------------------
+
+    line.append(
+        " " * ACTION_GAP,
+    )
+
+    # -------------------------------------------------------------------------
+    # Selection arrow
+    # -------------------------------------------------------------------------
+
+    if selected:
+        line.append(
+            "❯ ",
+            style="bold cyan",
+        )
+    else:
+        line.append(
+            " " * ARROW_WIDTH,
+        )
+
+    # -------------------------------------------------------------------------
+    # Drive name
+    # -------------------------------------------------------------------------
+
+    line.append(
+        f"{cfg['name']:<{NAME_WIDTH}}",
+        style="bold" if selected else None,
+    )
+
+    # -------------------------------------------------------------------------
+    # Status
+    # -------------------------------------------------------------------------
+
+    if busy:
+        line.append(
+            "working...",
+            style="dim",
+        )
+    else:
+        status_text, status_style = STATUS[state]
+
+        line.append(
+            status_text,
+            style=status_style,
+        )
+
+    return line
+
+
+def make_ui(
+    states,
+    selected,
+    busy=None,
+):
+    return Group(
+        *(
+            make_line(
+                cfg,
+                states[cfg["name"]],
+                index == selected,
+                busy=busy if index == selected else None,
+            )
+            for index, cfg in enumerate(MOUNTS)
+        )
+    )
+
+
+# =============================================================================
+# INPUT
+# =============================================================================
+
+def read_key():
+    """
+    Supported:
+
+        ↑
+        ↓
+        Enter
+        q
+    """
+
+    first = os.read(
+        sys.stdin.fileno(),
+        1,
+    )
+
+    if first in (b"q", b"Q"):
+        return "quit"
+
+    if first in (b"\r", b"\n"):
+        return "enter"
+
+    if first != b"\x1b":
+        return None
+
+    second = os.read(
+        sys.stdin.fileno(),
+        1,
+    )
+
+    if second != b"[":
+        return None
+
+    third = os.read(
+        sys.stdin.fileno(),
+        1,
+    )
+
+    if third == b"A":
+        return "up"
+
+    if third == b"B":
+        return "down"
+
+    return None
+
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+def main():
+
+    if not sys.stdin.isatty():
+        print(
+            "gmount must be run from an interactive terminal.",
+            file=sys.stderr,
+        )
+        return 1
+
+    # -------------------------------------------------------------------------
+    # Initial state.
+    #
+    # We deliberately DON'T call get_states() yet. That can involve multiple
+    # rclone calls and therefore make the TUI appear frozen.
+    # -------------------------------------------------------------------------
+
+    states = {
+        cfg["name"]: "offline"
+        for cfg in MOUNTS
+    }
+
+    selected = 0
+
+    enter_raw_mode()
+
+    try:
+
+        with Live(
+            make_ui(
+                states,
+                selected,
+                busy="CHECKING...",
+            ),
+            console=console,
+            screen=False,
+            auto_refresh=False,
+            transient=False,
+            redirect_stdout=False,
+            redirect_stderr=False,
+        ) as live:
+
+            # Render immediately.
+            live.refresh()
+
+            # -----------------------------------------------------------------
+            # Now perform the potentially slow initial state check.
+            # -----------------------------------------------------------------
+
+            states = get_states()
+
+            live.update(
+                make_ui(
+                    states,
+                    selected,
+                ),
+                refresh=True,
+            )
+
+            # -----------------------------------------------------------------
+            # Main loop.
+            # -----------------------------------------------------------------
+
+            while True:
+
+                key = read_key()
+
+                # =============================================================
+                # QUIT
+                # =============================================================
+
+                if key == "quit":
+                    break
+
+                # =============================================================
+                # UP
+                # =============================================================
+
+                if key == "up":
+
+                    selected = (
+                        selected - 1
+                    ) % len(MOUNTS)
+
+                    live.update(
+                        make_ui(
+                            states,
+                            selected,
+                        ),
+                        refresh=True,
+                    )
+
+                    continue
+
+                # =============================================================
+                # DOWN
+                # =============================================================
+
+                if key == "down":
+
+                    selected = (
+                        selected + 1
+                    ) % len(MOUNTS)
+
+                    live.update(
+                        make_ui(
+                            states,
+                            selected,
+                        ),
+                        refresh=True,
+                    )
+
+                    continue
+
+                # =============================================================
+                # ENTER
+                # =============================================================
+
+                if key == "enter":
+
+                    cfg = MOUNTS[selected]
+                    state = states[cfg["name"]]
+
+                    # ---------------------------------------------------------
+                    # Authentication
+                    # ---------------------------------------------------------
+
+                    if state == "auth":
+
+                        # rclone itself needs the terminal.
+                        live.stop()
+
+                        authenticate(cfg)
+
+                        # Re-enter TUI.
+                        live = Live(
+                            make_ui(
+                                states,
+                                selected,
+                                busy="CHECKING...",
+                            ),
+                            console=console,
+                            screen=False,
+                            auto_refresh=False,
+                            transient=False,
+                            redirect_stdout=False,
+                            redirect_stderr=False,
+                        )
+
+                        live.start(
+                            refresh=True,
+                        )
+
+                        states = get_states()
+
+                        live.update(
+                            make_ui(
+                                states,
+                                selected,
+                            ),
+                            refresh=True,
+                        )
+
+                        continue
+
+                    # ---------------------------------------------------------
+                    # Determine action text.
+                    # ---------------------------------------------------------
+
+                    if state == "mounted":
+                        busy = "UNMOUNTING..."
+
+                    elif state == "offline":
+                        busy = "MOUNTING..."
+
+                    else:
+                        busy = "RETRYING..."
+
+                    # ---------------------------------------------------------
+                    # Immediately show feedback BEFORE the blocking operation.
+                    # ---------------------------------------------------------
+
+                    live.update(
+                        make_ui(
+                            states,
+                            selected,
+                            busy=busy,
+                        ),
+                        refresh=True,
+                    )
+
+                    # ---------------------------------------------------------
+                    # Perform action.
+                    # ---------------------------------------------------------
+
+                    activate(
+                        cfg,
+                        state,
+                    )
+
+                    # ---------------------------------------------------------
+                    # State checking can itself take time, so explicitly show
+                    # that we are now checking the result.
+                    # ---------------------------------------------------------
+
+                    live.update(
+                        make_ui(
+                            states,
+                            selected,
+                            busy="CHECKING...",
+                        ),
+                        refresh=True,
+                    )
+
+                    states = get_states()
+
+                    live.update(
+                        make_ui(
+                            states,
+                            selected,
+                        ),
+                        refresh=True,
+                    )
+
+    except KeyboardInterrupt:
+        pass
+
+    finally:
+        leave_raw_mode()
+
+    print()
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

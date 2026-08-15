@@ -13,6 +13,10 @@ proxy() {
             shift
             _proxy_redsocks "$@"
             ;;
+        masquerade)
+            shift
+            _proxy_masquerade "$@"
+            ;;
         test)
             _proxy_test
             ;;
@@ -304,6 +308,33 @@ kitty-cmd() {
 }
 
 
+# VPN masquerade for hotspot clients
+_proxy_masquerade() {
+  local command="${1:-}"
+
+  case "$command" in
+    enable)
+      pkexec /usr/local/sbin/masquerade enable "${2:-tun0}" "${3:-wlp2s0}"
+      ;;
+    disable)
+      pkexec /usr/local/sbin/masquerade disable "${2:-tun0}" "${3:-wlp2s0}"
+      ;;
+    status)
+      pkexec /usr/local/sbin/masquerade status "${2:-tun0}" "${3:-wlp2s0}"
+      ;;
+    *)
+      echo -e "${_CLR_ERROR}Usage: proxy masquerade {enable|disable|status} [VPN_IF] [HOTSPOT_IF]${_CLR_RESET}"
+      echo "  Defaults: VPN_IF=tun0, HOTSPOT_IF=wlp2s0"
+      echo "Examples:"
+      echo "  proxy masquerade enable"
+      echo "  proxy masquerade enable tun0 wlp2s0"
+      echo "  proxy masquerade disable"
+      echo "  proxy masquerade status"
+      return 1
+      ;;
+  esac
+}
+
 # Proxy testing command
 _proxy_test() {
     local url="https://example.com"  # URL to test proxies against
@@ -404,6 +435,11 @@ REDSOCKS REDIRECTION COMMANDS:
   proxy redsocks disable        Disable transparent proxy redirection
   proxy redsocks toggle [IP]    Toggle transparent proxy redirection (enable/disable)
   proxy redsocks status         Show transparent proxy status
+
+MASQUERADE COMMANDS:
+  proxy masquerade enable [tun0] [wlp2s0]
+  proxy masquerade disable
+  proxy masquerade status
 
 GENERAL COMMANDS:
   proxy get                     Display current proxy settings

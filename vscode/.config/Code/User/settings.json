@@ -6,6 +6,7 @@
   "workbench.iconTheme": "material-icon-theme",
   "workbench.activityBar.location": "top",
   "workbench.editor.empty.hint": "hidden",
+  "workbench.colorTheme": "Dark Modern",
   "workbench.preferredHighContrastColorTheme": "Dark Modern",
 
   "window.zoomLevel": -0.7,
@@ -90,7 +91,7 @@
   // PYTHON
   // =========================
   "python.terminal.useEnvFile": true,
-  "python.languageServer": "Default",
+  "python.languageServer": "None",
   "python.defaultInterpreterPath": "/usr/bin/python3",
   "python.createEnvironment.trigger": "off",
 
@@ -160,16 +161,16 @@
     "**/*.asm~": true
   },
   "workbench.editorAssociations": {
-    "*.copilotmd": "vscode.markdown.preview.editor",
-    "*.md": "markdown-preview-enhanced",
-    "*.markdown": "markdown-preview-enhanced",
-    "*.mdown": "markdown-preview-enhanced",
-    "*.mkdn": "markdown-preview-enhanced",
-    "*.mkd": "markdown-preview-enhanced",
-    "*.rmd": "markdown-preview-enhanced",
-    "*.qmd": "markdown-preview-enhanced",
-    "*.mdx": "markdown-preview-enhanced"
+    // "*.md": "markdown-preview-enhanced",
+    // "*.markdown": "markdown-preview-enhanced",
+    // "*.mdown": "markdown-preview-enhanced",
+    // "*.mkdn": "markdown-preview-enhanced",
+    // "*.mkd": "markdown-preview-enhanced",
+    // "*.rmd": "markdown-preview-enhanced",
+    // "*.qmd": "markdown-preview-enhanced",
+    // "*.mdx": "markdown-preview-enhanced"
   },
+  "markdown-preview-enhanced.previewMode": "Previews Only",
 
   // =========================
   // NOTEBOOK
@@ -180,7 +181,5 @@
   // EXTENSIONS
   // =========================
   "regionFold.regionNames": ["ultraaryan10", "TEMPLATE", "DEBUG"],
-  "markdown-preview-enhanced.previewMode": "Previews Only",
   "workbench.browser.showInTitleBar": true,
-  "workbench.colorTheme": "Dark Modern",
 }

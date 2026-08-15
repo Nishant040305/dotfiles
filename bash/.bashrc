@@ -1,5 +1,3 @@
-# .bashrc
-
 # Source global definitions
 if [ -f /etc/bashrc ]; then
     . /etc/bashrc
@@ -24,12 +22,10 @@ if [ -d ~/.bashrc.d ]; then
 fi
 unset rc
 
-# Shared environment & modular aliases
-if [ -f "$HOME/.envrc" ]; then
-    source "$HOME/.envrc"
-elif [ -f "$HOME/.dotfiles/shell/.envrc" ]; then
-    source "$HOME/.dotfiles/shell/.envrc"
-fi
+# ------------------------------------------------------------------
+
+# Shared environment
+source "$HOME/.envrc"
 
 # Oh My Posh
 eval "$(oh-my-posh init bash --config ~/.prompt.omp.json)"

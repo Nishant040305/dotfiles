@@ -6,12 +6,6 @@
 eval "$(zoxide init zsh)"
 alias cd="z"
 
-# --- Editors ---
-alias nano="micro"
-alias vi="micro"
-alias vim="micro"
-alias edit="micro"
-
 # --- Eza ---
 local ls_options="--hyperlink --icons --group-directories-first"
 alias ls="eza $ls_options"
