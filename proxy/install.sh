@@ -43,6 +43,15 @@ sudo ln -sf redsocks2 "$BIN_DIR/redsocks"
 sudo rm -f /etc/systemd/system/redsocks.service
 sudo install -Dm644 "$MODULE/redsocks.service" "$SYSTEMD_DIR/redsocks.service"
 
+# Configure NetworkManager shared dnsmasq for hotspot DNS forwarding
+sudo mkdir -p /etc/NetworkManager/dnsmasq-shared.d
+echo -e "server=127.0.0.1#1053\nno-resolv" | sudo tee /etc/NetworkManager/dnsmasq-shared.d/redsocks-dns.conf > /dev/null
+
+# Configure Nishant-hotspot for IPv4-only and trusted firewall zone if present
+if nmcli con show "Nishant-hotspot" &>/dev/null; then
+    sudo nmcli con mod "Nishant-hotspot" connection.zone trusted ipv6.method disabled 2>/dev/null || true
+fi
+
 # Reload systemd and polkit
 sudo systemctl daemon-reload
 sudo systemctl enable redsocks.service

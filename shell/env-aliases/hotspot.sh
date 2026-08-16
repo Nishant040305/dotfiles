@@ -2,10 +2,10 @@
 hotspot() {
     case "$1" in
         enable)
-            nmcli connection up Hotspot
+            nmcli connection up Nishant-hotspot
             ;;
         disable)
-            nmcli connection down Hotspot
+            nmcli connection down Nishant-hotspot
             ;;
         *)
             echo "Usage: hotspot {enable|disable}"

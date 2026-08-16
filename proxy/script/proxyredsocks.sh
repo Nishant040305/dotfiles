@@ -1,218 +1,304 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Configuration
-PORT_HTTP=12345           # Redsocks listening port for HTTP (http-relay)
-PORT_CONNECT=12346        # Redsocks listening port for HTTPS and generic TCP (http-connect)
-PORT_DNS=1053             # Redsocks tcpdns local UDP listening port
-CHAIN=REDSOCKS            # iptables chain name
-SERVICE=redsocks          # systemd service name
-PROXY_IP="${2:-}"         # Proxy server IP address (passed as argument)
+PORT_HTTP=12345
+PORT_CONNECT=12346
 
-# Reserved/private networks that should bypass the proxy
+CHAIN="REDSOCKS"
+SERVICE="redsocks"
+
+PROXY_IP="${2:-}"
+
 RESERVED_NETS=(
-  0.0.0.0/8
-  10.0.0.0/8
-  100.64.0.0/10           # Tailscale CGNAT range
-  127.0.0.0/8
-  169.254.0.0/16
-  172.16.0.0/12
-  192.168.0.0/16
-  224.0.0.0/4
-  240.0.0.0/4
+    0.0.0.0/8
+    10.0.0.0/8
+    100.64.0.0/10
+    127.0.0.0/8
+    169.254.0.0/16
+    172.16.0.0/12
+    192.168.0.0/16
+    224.0.0.0/4
+    240.0.0.0/4
 )
 
 resolve_proxy_ip() {
-  local ip="${PROXY_IP:-}"
+    local ip="${PROXY_IP:-}"
 
-  if [[ -n "$ip" ]]; then
+    if [[ -n "$ip" ]]; then
+        printf '%s\n' "$ip"
+        return
+    fi
+
+    local proxy_url
+
+    proxy_url="$(
+        kreadconfig6 \
+            --file kioslaverc \
+            --group "Proxy Settings" \
+            --key httpProxy \
+            2>/dev/null || true
+    )"
+
+    if [[ -n "$proxy_url" ]]; then
+        # Strip scheme
+        proxy_url="${proxy_url#http://}"
+        proxy_url="${proxy_url#https://}"
+
+        # Strip credentials
+        proxy_url="${proxy_url##*@}"
+
+        # Strip port
+        ip="${proxy_url%%:*}"
+    fi
+
+    if [[ -z "$ip" ]]; then
+        echo "[!] Proxy IP not provided."
+        echo "    Usage:"
+        echo "      sudo $0 enable <PROXY_IP>"
+        exit 1
+    fi
+
     printf '%s\n' "$ip"
-    return 0
-  fi
-
-  local proxy_url
-  proxy_url=$(kreadconfig6 --file kioslaverc --group "Proxy Settings" --key httpProxy 2>/dev/null || true)
-  if [[ -n "$proxy_url" ]]; then
-    ip=$(printf '%s' "$proxy_url" | sed -E 's|https?://([^:@]*:)?([^:@]*@)?||; s|:.*||')
-  fi
-
-  if [[ -z "$ip" ]]; then
-    echo "[!] Usage: proxyredsocks enable <PROXY_IP>"
-    echo "    or configure KDE system proxy first"
-    exit 1
-  fi
-
-  printf '%s\n' "$ip"
 }
 
 rewrite_conf() {
-  local ip
-  ip="$(resolve_proxy_ip)"
+    local ip
+    ip="$(resolve_proxy_ip)"
 
-  echo "[*] Using proxy http://edcguest:edcguest@$ip:3128"
+    echo "[*] Proxy: http://edcguest:edcguest@${ip}:3128"
 
-  sed \
-    -e "s/__PROXY_IP__/${ip}/g" \
-    /etc/redsocks.conf.template > /etc/redsocks.conf.new
+    sed \
+        -e "s/__PROXY_IP__/${ip}/g" \
+        /etc/redsocks.conf.template \
+        > /etc/redsocks.conf.new
 
-  mv /etc/redsocks.conf.new /etc/redsocks.conf
+    mv /etc/redsocks.conf.new /etc/redsocks.conf
 }
 
-setup_system_dns() {
-  # Direct systemd-resolved to use local redsocks tcpdns forwarder on all default-route interfaces
-  local ifaces
-  ifaces=$(ip -o route show default 2>/dev/null | awk '{print $5}' | sort -u || true)
-  for iface in $ifaces; do
-    resolvectl dns "$iface" "127.0.0.1:$PORT_DNS" 2>/dev/null || true
-  done
-  resolvectl flush-caches 2>/dev/null || true
+create_chain() {
+    iptables -t nat -N "$CHAIN" 2>/dev/null || true
+    iptables -t nat -F "$CHAIN"
 }
 
-restore_system_dns() {
-  local ifaces
-  ifaces=$(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | grep -v "lo" || true)
-  for iface in $ifaces; do
-    resolvectl revert "$iface" 2>/dev/null || true
-  done
-  resolvectl flush-caches 2>/dev/null || true
+remove_chain() {
+    iptables -t nat -D OUTPUT \
+        -p tcp \
+        -j "$CHAIN" 2>/dev/null || true
+
+    iptables -t nat -D PREROUTING \
+        -p tcp \
+        -j "$CHAIN" 2>/dev/null || true
+
+    iptables -t nat -F "$CHAIN" 2>/dev/null || true
+    iptables -t nat -X "$CHAIN" 2>/dev/null || true
+}
+
+configure_chain() {
+
+    # Never proxy traffic to the proxy itself.
+    local proxy_ip
+    proxy_ip="$(resolve_proxy_ip)"
+
+    iptables -t nat -A "$CHAIN" \
+        -d "$proxy_ip" \
+        -j RETURN
+
+    # Tailscale
+    iptables -t nat -A "$CHAIN" \
+        -o tailscale0 \
+        -j RETURN 2>/dev/null || true
+
+    # Private/reserved networks
+    for net in "${RESERVED_NETS[@]}"; do
+        iptables -t nat -A "$CHAIN" \
+            -d "$net" \
+            -j RETURN
+    done
+
+    # HTTP
+    iptables -t nat -A "$CHAIN" \
+        -p tcp \
+        --dport 80 \
+        -j REDIRECT \
+        --to-ports "$PORT_HTTP"
+
+    # HTTPS only
+    iptables -t nat -A "$CHAIN" \
+        -p tcp \
+        --dport 443 \
+        -j REDIRECT \
+        --to-ports "$PORT_CONNECT"
+}
+
+install_hooks() {
+
+    # Local machine traffic
+    iptables -t nat -C OUTPUT \
+        -p tcp \
+        -j "$CHAIN" 2>/dev/null || \
+    iptables -t nat -A OUTPUT \
+        -p tcp \
+        -j "$CHAIN"
+
+    # Forwarded/hotspot traffic
+    iptables -t nat -C PREROUTING \
+        -p tcp \
+        -j "$CHAIN" 2>/dev/null || \
+    iptables -t nat -A PREROUTING \
+        -p tcp \
+        -j "$CHAIN"
+}
+
+configure_firewall() {
+
+    # Force HTTPS applications away from QUIC.
+    iptables -C OUTPUT \
+        -p udp \
+        --dport 443 \
+        -j DROP 2>/dev/null || \
+    iptables -A OUTPUT \
+        -p udp \
+        --dport 443 \
+        -j DROP
+
+    iptables -C FORWARD \
+        -p udp \
+        --dport 443 \
+        -j DROP 2>/dev/null || \
+    iptables -A FORWARD \
+        -p udp \
+        --dport 443 \
+        -j DROP
+
+    # Block TCP Private DNS for forwarded clients.
+    iptables -C FORWARD \
+        -p tcp \
+        --dport 853 \
+        -j REJECT \
+        --reject-with tcp-reset 2>/dev/null || \
+    iptables -A FORWARD \
+        -p tcp \
+        --dport 853 \
+        -j REJECT \
+        --reject-with tcp-reset
+}
+
+remove_firewall() {
+
+    iptables -D OUTPUT \
+        -p udp \
+        --dport 443 \
+        -j DROP 2>/dev/null || true
+
+    iptables -D FORWARD \
+        -p udp \
+        --dport 443 \
+        -j DROP 2>/dev/null || true
+
+    iptables -D FORWARD \
+        -p tcp \
+        --dport 853 \
+        -j REJECT \
+        --reject-with tcp-reset 2>/dev/null || true
 }
 
 show_status() {
-  # Check if redsocks service is running
-  echo -n "Service: "
-  systemctl is-active $SERVICE || true
 
-  if [[ $EUID -ne 0 ]]; then
-    echo "(run as root to see iptables rules and DNS status)"
-  else
-    echo ""
-    echo "=== NAT OUTPUT chain ==="
-    local output_rules
-    output_rules="$(iptables -t nat -L OUTPUT -n --line-numbers 2>/dev/null | grep -iE "redsocks|1053" || true)"
-    if [[ -n "$output_rules" ]]; then
-      echo "$output_rules"
-    else
-      echo "(no REDSOCKS rules)"
-    fi
+    echo "=== Service ==="
+    systemctl is-active "$SERVICE" || true
 
-    echo ""
-    echo "=== NAT PREROUTING chain ==="
-    local prerouting_rules
-    prerouting_rules="$(iptables -t nat -L PREROUTING -n --line-numbers 2>/dev/null | grep -iE "redsocks|1053" || true)"
-    if [[ -n "$prerouting_rules" ]]; then
-      echo "$prerouting_rules"
-    else
-      echo "(no REDSOCKS rules)"
-    fi
+    echo
+    echo "=== Redsocks listeners ==="
+    ss -lntp | grep -E ":(${PORT_HTTP}|${PORT_CONNECT})" || \
+        echo "No redsocks listeners found."
 
-    echo ""
+    echo
+    echo "=== NAT OUTPUT ==="
+    iptables -t nat -L OUTPUT -n --line-numbers |
+        grep -E "$CHAIN" || \
+        echo "No REDSOCKS OUTPUT rule."
+
+    echo
+    echo "=== NAT PREROUTING ==="
+    iptables -t nat -L PREROUTING -n --line-numbers |
+        grep -E "$CHAIN" || \
+        echo "No REDSOCKS PREROUTING rule."
+
+    echo
     echo "=== REDSOCKS chain ==="
-    local chain_rules
-    chain_rules="$(iptables -t nat -L $CHAIN -n --line-numbers 2>/dev/null || true)"
-    if [[ -n "$chain_rules" ]]; then
-      echo "$chain_rules"
-    else
-      echo "(chain does not exist)"
-    fi
+    iptables -t nat -L "$CHAIN" -n --line-numbers \
+        2>/dev/null || \
+        echo "Chain does not exist."
 
-    echo ""
-    echo "=== DNS Status (resolvectl) ==="
-    resolvectl status 2>/dev/null | grep -E "Link|DNS Server" | head -10 || true
+    echo
+    echo "=== DNS ==="
+    resolvectl status 2>/dev/null |
+        grep -E "DNS Servers|DNS Domain" || true
+}
 
-    if [[ "$(systemctl is-active "$SERVICE" 2>/dev/null || true)" == "active" ]] && \
-       [[ -z "${output_rules:-}" && -z "${prerouting_rules:-}" && -z "${chain_rules:-}" ]]; then
-      echo ""
-      echo "[!] Service is active but no REDSOCKS NAT rules are installed."
-      echo "    Run: sudo /usr/local/sbin/proxyredsocks enable"
-    fi
-  fi
+enable() {
+
+    rewrite_conf
+
+    echo "[*] Starting redsocks..."
+    systemctl restart "$SERVICE"
+
+    echo "[*] Enabling IP forwarding..."
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null
+
+    echo "[*] Creating REDSOCKS chain..."
+    create_chain
+
+    echo "[*] Configuring REDSOCKS chain..."
+    configure_chain
+
+    echo "[*] Installing NAT hooks..."
+    install_hooks
+
+    echo "[*] Configuring firewall..."
+    configure_firewall
+
+    echo
+    echo "[+] Redsocks enabled."
+    echo
+    echo "HTTP  : TCP/80  -> 127.0.0.1:${PORT_HTTP}"
+    echo "HTTPS : TCP/443 -> 127.0.0.1:${PORT_CONNECT}"
+}
+
+disable() {
+
+    echo "[*] Removing NAT hooks..."
+    remove_chain
+
+    echo "[*] Removing firewall rules..."
+    remove_firewall
+
+    echo "[*] Stopping redsocks..."
+    systemctl stop "$SERVICE"
+
+    echo
+    echo "[+] Redsocks disabled."
 }
 
 case "${1:-}" in
 
-  enable)
-    # Start the redsocks service
-    rewrite_conf
-    systemctl restart $SERVICE
+    enable)
+        enable
+        ;;
 
-    # Enable IP forwarding (required for hotspot NAT)
-    sysctl -w net.ipv4.ip_forward=1 > /dev/null
+    disable)
+        disable
+        ;;
 
-    # Create or flush the custom iptables chain
-    iptables -t nat -N $CHAIN 2>/dev/null || true
-    iptables -t nat -F $CHAIN
+    status)
+        show_status
+        ;;
 
-    # Bypass all traffic sent through the Tailscale interface
-    iptables -t nat -A $CHAIN -o tailscale0 -j RETURN
-
-    # Exclude private/reserved networks from redirection (whitelist)
-    for net in "${RESERVED_NETS[@]}"; do
-      iptables -t nat -A $CHAIN -d "$net" -j RETURN
-    done
-
-    # Port 80 (HTTP) -> http-relay instance (port 12345)
-    iptables -t nat -A $CHAIN -p tcp --dport 80 -j REDIRECT --to-ports $PORT_HTTP
-
-    # All other TCP (HTTPS, TCP DNS, etc.) -> http-connect instance (port 12346)
-    iptables -t nat -A $CHAIN -p tcp -j REDIRECT --to-ports $PORT_CONNECT
-    
-    # Link the custom chain to the OUTPUT chain for local traffic
-    iptables -t nat -C OUTPUT -p tcp -j $CHAIN 2>/dev/null || \
-      iptables -t nat -A OUTPUT -p tcp -j $CHAIN
-
-    # Link the custom chain to the PREROUTING chain for hotspot/forwarded traffic
-    iptables -t nat -C PREROUTING -p tcp -j $CHAIN 2>/dev/null || \
-      iptables -t nat -A PREROUTING -p tcp -j $CHAIN
-
-    # Redirect UDP port 53 to redsocks tcpdns forwarder (port 1053)
-    iptables -t nat -C OUTPUT -p udp --dport 53 -j REDIRECT --to-ports $PORT_DNS 2>/dev/null || \
-      iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports $PORT_DNS
-    iptables -t nat -C PREROUTING -p udp --dport 53 -j REDIRECT --to-ports $PORT_DNS 2>/dev/null || \
-      iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports $PORT_DNS
-
-    # Configure local system DNS resolver (systemd-resolved)
-    setup_system_dns
-
-    # Block QUIC/UDP 443 to force browsers to fall back to standard TCP HTTPS
-    iptables -C OUTPUT -p udp --dport 443 -j DROP 2>/dev/null || \
-      iptables -A OUTPUT -p udp --dport 443 -j DROP
-    iptables -C FORWARD -p udp --dport 443 -j DROP 2>/dev/null || \
-      iptables -A FORWARD -p udp --dport 443 -j DROP
-
-    echo "[*] Redsocks enabled for local + hotspot traffic (HTTP, HTTPS, DNS)"
-    ;;
-
-  disable)
-    # Remove OUTPUT & PREROUTING chain links
-    iptables -t nat -D OUTPUT -p tcp -j $CHAIN 2>/dev/null || true
-    iptables -t nat -D PREROUTING -p tcp -j $CHAIN 2>/dev/null || true
-
-    # Remove UDP 53 DNS redirection
-    iptables -t nat -D OUTPUT -p udp --dport 53 -j REDIRECT --to-ports $PORT_DNS 2>/dev/null || true
-    iptables -t nat -D PREROUTING -p udp --dport 53 -j REDIRECT --to-ports $PORT_DNS 2>/dev/null || true
-    
-    # Flush and remove the custom chain
-    iptables -t nat -F $CHAIN 2>/dev/null || true
-    iptables -t nat -X $CHAIN 2>/dev/null || true
-    
-    # Restore system DNS settings
-    restore_system_dns
-
-    # Re-enable QUIC/UDP 443
-    iptables -D OUTPUT -p udp --dport 443 -j DROP 2>/dev/null || true
-    iptables -D FORWARD -p udp --dport 443 -j DROP 2>/dev/null || true
-    
-    # Stop the redsocks service
-    systemctl stop $SERVICE
-
-    echo "[*] Redsocks disabled"
-    ;;
-
-  status)
-    show_status
-    ;;
-
-  *)
-    echo "[!] Usage: proxyredsocks {enable|disable|status} [PROXY_IP]"
-    exit 1
+    *)
+        echo "Usage:"
+        echo "  sudo $0 enable <PROXY_IP>"
+        echo "  sudo $0 disable"
+        echo "  sudo $0 status"
+        exit 1
+        ;;
 esac
