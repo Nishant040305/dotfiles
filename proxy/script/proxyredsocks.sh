@@ -267,14 +267,23 @@ enable() {
 
 disable() {
 
+    echo "[*] Stopping redsocks..."
+    systemctl stop "$SERVICE"
+
     echo "[*] Removing NAT hooks..."
     remove_chain
 
     echo "[*] Removing firewall rules..."
     remove_firewall
 
-    echo "[*] Stopping redsocks..."
-    systemctl stop "$SERVICE"
+    # Verify iptables cleanup actually succeeded
+    if iptables -t nat -L "$CHAIN" -n &>/dev/null; then
+        echo "[!] REDSOCKS chain still exists — forcing removal..."
+        iptables -t nat -D OUTPUT  -p tcp -j "$CHAIN" 2>/dev/null || true
+        iptables -t nat -D PREROUTING -p tcp -j "$CHAIN" 2>/dev/null || true
+        iptables -t nat -F "$CHAIN" 2>/dev/null || true
+        iptables -t nat -X "$CHAIN" 2>/dev/null || true
+    fi
 
     echo
     echo "[+] Redsocks disabled."

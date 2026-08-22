@@ -268,7 +268,8 @@ _proxy_redsocks() {
       pkexec /usr/local/sbin/proxyredsocks disable
       ;;
     toggle)
-      if systemctl is-active --quiet redsocks 2>/dev/null; then
+      if systemctl is-active --quiet redsocks 2>/dev/null || \
+         sudo -n iptables -t nat -L REDSOCKS -n 2>/dev/null | grep -q REDIRECT 2>/dev/null; then
         pkexec /usr/local/sbin/proxyredsocks disable
         return $?
       fi
