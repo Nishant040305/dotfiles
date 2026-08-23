@@ -316,6 +316,11 @@ class ProxyManager:
                 ],
                 check=True, timeout=5,
             )
+            # Ensure system-level files (DNF, NM) are also cleaned up
+            subprocess.run(
+                ["pkexec", PROXY_CMD, "cleanup"],
+                capture_output=True, timeout=10,
+            )
             self._notify("Proxy OFF", "System proxy disabled")
         except Exception as exc:
             self._notify("Proxy Error", str(exc), "critical")

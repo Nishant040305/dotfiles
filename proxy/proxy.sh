@@ -145,6 +145,7 @@ _proxy_system_enable() {
 _proxy_system_disable() {
     echo -e "${_CLR_INFO}${_CLR_BOLD}⟳ Disabling system proxy${_CLR_RESET}"
     kwriteconfig6 --file kioslaverc --group "Proxy Settings" --key ProxyType 0
+    pkexec /usr/local/sbin/proxyredsocks cleanup 2>/dev/null || true
     echo -e "${_CLR_SUCCESS}${_CLR_BOLD}✓ System proxy${_CLR_RESET} ${_CLR_DIM}disabled${_CLR_RESET}"
 }
 
