@@ -12,8 +12,8 @@ User=redsocks
 ExecStartPre=/usr/local/bin/redsocks2 -t -c /etc/redsocks.conf
 ExecStart=/usr/local/bin/redsocks2 -c /etc/redsocks.conf
 
-Restart=on-failure
-RestartSec=2
+Restart=on-abort
+RestartSec=5
 
 TimeoutStopFailureMode=kill
 TimeoutStopSec=1min

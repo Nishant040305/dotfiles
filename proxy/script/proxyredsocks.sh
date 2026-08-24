@@ -265,7 +265,25 @@ enable() {
     echo "HTTPS : TCP/443 -> 127.0.0.1:${PORT_CONNECT}"
 }
 
+cleanup_system_configs() {
+    # Remove any proxy configuration from /etc/dnf/dnf.conf
+    if [[ -f /etc/dnf/dnf.conf ]] && grep -q "proxy=" /etc/dnf/dnf.conf 2>/dev/null; then
+        echo "[*] Removing proxy from /etc/dnf/dnf.conf..."
+        echo "[main]" > /etc/dnf/dnf.conf
+    fi
+
+    # Remove NetworkManager connectivity check override if present
+    if [[ -f /etc/NetworkManager/conf.d/20-connectivity.conf ]]; then
+        echo "[*] Restoring NetworkManager connectivity check..."
+        rm -f /etc/NetworkManager/conf.d/20-connectivity.conf
+        systemctl restart NetworkManager 2>/dev/null || true
+    fi
+}
+
 disable() {
+
+    echo "[*] Stopping redsocks..."
+    systemctl stop "$SERVICE"
 
     echo "[*] Removing NAT hooks..."
     remove_chain
@@ -273,8 +291,16 @@ disable() {
     echo "[*] Removing firewall rules..."
     remove_firewall
 
-    echo "[*] Stopping redsocks..."
-    systemctl stop "$SERVICE"
+    # Verify iptables cleanup actually succeeded
+    if iptables -t nat -L "$CHAIN" -n &>/dev/null; then
+        echo "[!] REDSOCKS chain still exists — forcing removal..."
+        iptables -t nat -D OUTPUT  -p tcp -j "$CHAIN" 2>/dev/null || true
+        iptables -t nat -D PREROUTING -p tcp -j "$CHAIN" 2>/dev/null || true
+        iptables -t nat -F "$CHAIN" 2>/dev/null || true
+        iptables -t nat -X "$CHAIN" 2>/dev/null || true
+    fi
+
+    cleanup_system_configs
 
     echo
     echo "[+] Redsocks disabled."
@@ -290,6 +316,10 @@ case "${1:-}" in
         disable
         ;;
 
+    cleanup)
+        cleanup_system_configs
+        ;;
+
     status)
         show_status
         ;;
@@ -298,6 +328,7 @@ case "${1:-}" in
         echo "Usage:"
         echo "  sudo $0 enable <PROXY_IP>"
         echo "  sudo $0 disable"
+        echo "  sudo $0 cleanup"
         echo "  sudo $0 status"
         exit 1
         ;;

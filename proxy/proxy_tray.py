@@ -316,6 +316,11 @@ class ProxyManager:
                 ],
                 check=True, timeout=5,
             )
+            # Ensure system-level files (DNF, NM) are also cleaned up
+            subprocess.run(
+                ["pkexec", PROXY_CMD, "cleanup"],
+                capture_output=True, timeout=10,
+            )
             self._notify("Proxy OFF", "System proxy disabled")
         except Exception as exc:
             self._notify("Proxy Error", str(exc), "critical")
@@ -352,7 +357,17 @@ class ProxyManager:
                 ["pkexec", PROXY_CMD, "disable"],
                 check=True, timeout=30,
             )
-            self._notify("Redsocks OFF", "Transparent proxy disabled")
+            # Wait and verify the service actually stayed down
+            time.sleep(3)
+            if self.is_redsocks_on():
+                # Service auto-restarted — force-stop it
+                subprocess.run(
+                    ["pkexec", PROXY_CMD, "disable"],
+                    check=True, timeout=30,
+                )
+                self._notify("Redsocks OFF", "Service auto-restarted — force-stopped")
+            else:
+                self._notify("Redsocks OFF", "Transparent proxy disabled")
         except Exception as exc:
             self._notify("Redsocks Error", str(exc), "critical")
 
