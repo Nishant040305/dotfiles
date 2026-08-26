@@ -52,6 +52,16 @@ if nmcli con show "Nishant-hotspot" &>/dev/null; then
     sudo nmcli con mod "Nishant-hotspot" connection.zone trusted ipv6.method disabled 2>/dev/null || true
 fi
 
+# Configure firewalld nm-shared zone for transparent proxy & hotspot routing
+if command -v firewall-cmd &>/dev/null && systemctl is-active firewalld &>/dev/null; then
+    echo "[*] Configuring firewalld nm-shared zone for hotspot..."
+    sudo firewall-cmd --zone=nm-shared --add-port=12345/tcp --add-port=12346/tcp --add-port=1053/udp --add-port=1053/tcp --permanent &>/dev/null || true
+    sudo firewall-cmd --zone=nm-shared --add-service=kdeconnect --permanent &>/dev/null || true
+    sudo firewall-cmd --zone=nm-shared --add-forward --permanent &>/dev/null || true
+    sudo firewall-cmd --zone=nm-shared --add-masquerade --permanent &>/dev/null || true
+    sudo firewall-cmd --reload &>/dev/null || true
+fi
+
 # Reload systemd and polkit
 sudo systemctl daemon-reload
 sudo systemctl enable redsocks.service

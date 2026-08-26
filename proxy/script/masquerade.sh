@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Configuration
+detect_wifi_if() {
+    local iface
+    iface="$(nmcli -t -f DEVICE,TYPE dev 2>/dev/null | grep ':wifi$' | cut -d: -f1 | head -n1 || true)"
+    if [[ -z "$iface" ]]; then
+        iface="$(ip -o link show | awk -F': ' '{print $2}' | grep -E '^wl' | head -n1 || true)"
+    fi
+    printf '%s\n' "${iface:-wlp0s20f3}"
+}
+
 VPN_IF="${2:-tun0}"         # VPN tunnel interface
-HOTSPOT_IF="${3:-wlp2s0}"   # Hotspot/Wi-Fi interface
+HOTSPOT_IF="${3:-$(detect_wifi_if)}"   # Hotspot/Wi-Fi interface
 
 case "${1:-}" in
 

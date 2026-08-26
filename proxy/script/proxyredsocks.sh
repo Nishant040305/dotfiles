@@ -3,6 +3,7 @@ set -euo pipefail
 
 PORT_HTTP=12345
 PORT_CONNECT=12346
+PORT_DNS=1053
 
 CHAIN="REDSOCKS"
 SERVICE="redsocks"
@@ -29,8 +30,9 @@ resolve_proxy_ip() {
         return
     fi
 
-    local proxy_url
+    local proxy_url=""
 
+    # 1. Try kreadconfig6 in current environment
     proxy_url="$(
         kreadconfig6 \
             --file kioslaverc \
@@ -38,6 +40,24 @@ resolve_proxy_ip() {
             --key httpProxy \
             2>/dev/null || true
     )"
+
+    # 2. If running under sudo/pkexec, check invoking user's KDE config
+    if [[ -z "$proxy_url" && -n "${SUDO_USER:-}" ]]; then
+        local user_kioslaverc="/home/${SUDO_USER}/.config/kioslaverc"
+        if [[ -f "$user_kioslaverc" ]]; then
+            proxy_url="$(grep -E '^httpProxy=' "$user_kioslaverc" 2>/dev/null | cut -d'=' -f2- || true)"
+        fi
+    fi
+
+    # 3. Search in any home directory's kioslaverc
+    if [[ -z "$proxy_url" ]]; then
+        for cfg in /home/*/.config/kioslaverc; do
+            if [[ -f "$cfg" ]]; then
+                proxy_url="$(grep -E '^httpProxy=' "$cfg" 2>/dev/null | cut -d'=' -f2- || true)"
+                [[ -n "$proxy_url" ]] && break
+            fi
+        done
+    fi
 
     if [[ -n "$proxy_url" ]]; then
         # Strip scheme
@@ -49,6 +69,11 @@ resolve_proxy_ip() {
 
         # Strip port
         ip="${proxy_url%%:*}"
+    fi
+
+    # 4. Fallback to /etc/redsocks.conf if already configured
+    if [[ -z "$ip" && -f /etc/redsocks.conf ]]; then
+        ip="$(grep -oE 'relay = "([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)' /etc/redsocks.conf 2>/dev/null | cut -d'"' -f2 || true)"
     fi
 
     if [[ -z "$ip" ]]; then
@@ -89,8 +114,38 @@ remove_chain() {
         -p tcp \
         -j "$CHAIN" 2>/dev/null || true
 
+    iptables -t nat -D OUTPUT \
+        -p udp \
+        --dport 53 \
+        -j "$CHAIN" 2>/dev/null || true
+
+    iptables -t nat -D PREROUTING \
+        -p udp \
+        --dport 53 \
+        -j "$CHAIN" 2>/dev/null || true
+
     iptables -t nat -F "$CHAIN" 2>/dev/null || true
     iptables -t nat -X "$CHAIN" 2>/dev/null || true
+}
+
+configure_dns() {
+    local default_if
+    default_if="$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1 || true)"
+    if [[ -n "$default_if" ]] && command -v resolvectl &>/dev/null; then
+        echo "[*] Configuring systemd-resolved DNS (127.0.0.1 on $default_if)..."
+        resolvectl dns "$default_if" 127.0.0.1 2>/dev/null || true
+        resolvectl flush-caches 2>/dev/null || true
+    fi
+}
+
+revert_dns() {
+    local default_if
+    default_if="$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1 || true)"
+    if [[ -n "$default_if" ]] && command -v resolvectl &>/dev/null; then
+        echo "[*] Reverting systemd-resolved DNS on $default_if..."
+        resolvectl revert "$default_if" 2>/dev/null || true
+        resolvectl flush-caches 2>/dev/null || true
+    fi
 }
 
 configure_chain() {
@@ -115,6 +170,13 @@ configure_chain() {
             -j RETURN
     done
 
+    # DNS over TCP -> redsocks http-connect
+    iptables -t nat -A "$CHAIN" \
+        -p tcp \
+        --dport 53 \
+        -j REDIRECT \
+        --to-ports "$PORT_CONNECT"
+
     # HTTP
     iptables -t nat -A "$CHAIN" \
         -p tcp \
@@ -122,17 +184,16 @@ configure_chain() {
         -j REDIRECT \
         --to-ports "$PORT_HTTP"
 
-    # HTTPS only
+    # All other TCP traffic (HTTPS, SSH, etc.) -> redsocks http-connect
     iptables -t nat -A "$CHAIN" \
         -p tcp \
-        --dport 443 \
         -j REDIRECT \
         --to-ports "$PORT_CONNECT"
 }
 
 install_hooks() {
 
-    # Local machine traffic
+    # Local machine TCP traffic
     iptables -t nat -C OUTPUT \
         -p tcp \
         -j "$CHAIN" 2>/dev/null || \
@@ -140,7 +201,7 @@ install_hooks() {
         -p tcp \
         -j "$CHAIN"
 
-    # Forwarded/hotspot traffic
+    # Forwarded/hotspot TCP traffic
     iptables -t nat -C PREROUTING \
         -p tcp \
         -j "$CHAIN" 2>/dev/null || \
@@ -210,7 +271,9 @@ show_status() {
     echo
     echo "=== Redsocks listeners ==="
     ss -lntp | grep -E ":(${PORT_HTTP}|${PORT_CONNECT})" || \
-        echo "No redsocks listeners found."
+        echo "No redsocks TCP listeners found."
+    ss -lnup | grep -E ":(${PORT_DNS})" || \
+        echo "No redsocks DNS listener found."
 
     echo
     echo "=== NAT OUTPUT ==="
@@ -258,11 +321,15 @@ enable() {
     echo "[*] Configuring firewall..."
     configure_firewall
 
+    configure_dns
+
     echo
     echo "[+] Redsocks enabled."
     echo
-    echo "HTTP  : TCP/80  -> 127.0.0.1:${PORT_HTTP}"
-    echo "HTTPS : TCP/443 -> 127.0.0.1:${PORT_CONNECT}"
+    echo "HTTP          : TCP/80  -> 0.0.0.0:${PORT_HTTP}"
+    echo "HTTPS/SSH/TCP : TCP/*   -> 0.0.0.0:${PORT_CONNECT}"
+    echo "DNS           : UDP/53  -> 127.0.0.1:53"
+    echo "DNS           : TCP/53  -> 0.0.0.0:${PORT_CONNECT}"
 }
 
 cleanup_system_configs() {
@@ -291,11 +358,15 @@ disable() {
     echo "[*] Removing firewall rules..."
     remove_firewall
 
+    revert_dns
+
     # Verify iptables cleanup actually succeeded
     if iptables -t nat -L "$CHAIN" -n &>/dev/null; then
         echo "[!] REDSOCKS chain still exists — forcing removal..."
         iptables -t nat -D OUTPUT  -p tcp -j "$CHAIN" 2>/dev/null || true
         iptables -t nat -D PREROUTING -p tcp -j "$CHAIN" 2>/dev/null || true
+        iptables -t nat -D OUTPUT  -p udp --dport 53 -j "$CHAIN" 2>/dev/null || true
+        iptables -t nat -D PREROUTING -p udp --dport 53 -j "$CHAIN" 2>/dev/null || true
         iptables -t nat -F "$CHAIN" 2>/dev/null || true
         iptables -t nat -X "$CHAIN" 2>/dev/null || true
     fi

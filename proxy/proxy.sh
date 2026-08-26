@@ -254,8 +254,8 @@ _proxyauto() {
 
 # Redsocks transparent proxy redirection using system proxy host
 _proxy_redsocks() {
-  local command="$1"
-  local ip="$2"
+  local command="${1:-}"
+  local ip="${2:-}"
   
   case "$command" in
     enable)

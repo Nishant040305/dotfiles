@@ -8,6 +8,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=redsocks
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 ExecStartPre=/usr/local/bin/redsocks2 -t -c /etc/redsocks.conf
 ExecStart=/usr/local/bin/redsocks2 -c /etc/redsocks.conf
